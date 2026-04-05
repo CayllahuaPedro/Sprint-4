@@ -1,7 +1,14 @@
 import numpy as np
 import pandas as pd
 import os
-from transformers import TFConvNextV2Model, TFViTModel, TFSwinModel, TFCLIPVisionModel
+try:
+    from transformers import TFConvNextV2Model, TFViTModel, TFSwinModel, TFCLIPVisionModel
+except ImportError:
+    try:
+        from transformers import TFViTModel, TFSwinModel, TFCLIPVisionModel
+        TFConvNextV2Model = None
+    except ImportError:
+        TFConvNextV2Model = TFViTModel = TFSwinModel = TFCLIPVisionModel = None
 from tensorflow.keras.applications import (
     ResNet50, ResNet101, DenseNet121, DenseNet169, InceptionV3
 )
@@ -99,11 +106,14 @@ class FoundationalCVModel:
         elif backbone == 'inception_v3':
             self.base_model = InceptionV3(weights='imagenet', include_top=False, input_shape=input_shape)
         elif backbone == 'convnextv2_tiny':
-            self.base_model = TFConvNextV2Model.from_pretrained('facebook/convnextv2-tiny-1k-224')
+            from transformers import TFConvNextV2Model as _TFConvNextV2Model
+            self.base_model = _TFConvNextV2Model.from_pretrained('facebook/convnextv2-tiny-1k-224')
         elif backbone == 'convnextv2_base':
-            self.base_model = TFConvNextV2Model.from_pretrained('facebook/convnextv2-base-1k-224')
+            from transformers import TFConvNextV2Model as _TFConvNextV2Model
+            self.base_model = _TFConvNextV2Model.from_pretrained('facebook/convnextv2-base-1k-224')
         elif backbone == 'convnextv2_large':
-            self.base_model = TFConvNextV2Model.from_pretrained('facebook/convnextv2-large-1k-224')
+            from transformers import TFConvNextV2Model as _TFConvNextV2Model
+            self.base_model = _TFConvNextV2Model.from_pretrained('facebook/convnextv2-large-1k-224')
         elif backbone == 'swin_tiny':
             self.base_model = TFSwinModel.from_pretrained('microsoft/swin-tiny-patch4-window7-224')
         elif backbone == 'swin_small':
