@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import os
-from transformers import TFConvNextV2Model, TFViTModel, TFSwinModel
+from transformers import TFConvNextV2Model, TFViTModel, TFSwinModel, TFCLIPVisionModel
 from tensorflow.keras.applications import (
     ResNet50, ResNet101, DenseNet121, DenseNet169, InceptionV3
 )
@@ -116,13 +116,17 @@ class FoundationalCVModel:
                 'vit_large': 'google/vit-large-patch16-224',
             }
             self.base_model = TFViTModel.from_pretrained(backbone_path[backbone])
+        elif backbone == 'clip_base':
+            self.base_model = TFCLIPVisionModel.from_pretrained('openai/clip-vit-base-patch32')
+        elif backbone == 'clip_large':
+            self.base_model = TFCLIPVisionModel.from_pretrained('openai/clip-vit-large-patch14')
         else:
             raise ValueError(f"Unsupported backbone model: {backbone}")
 
         if mode == 'eval':
             self.base_model.trainable = False
 
-        if backbone in ['vit_base', 'vit_large', 'convnextv2_tiny', 'convnextv2_base', 'convnextv2_large', 'swin_tiny', 'swin_small', 'swin_base']:
+        if backbone in ['vit_base', 'vit_large', 'convnextv2_tiny', 'convnextv2_base', 'convnextv2_large', 'swin_tiny', 'swin_small', 'swin_base', 'clip_base', 'clip_large']:
             input_layer_transposed = tf.transpose(input_layer, perm=[0, 3, 1, 2])
             outputs = self.base_model(input_layer_transposed).pooler_output
         else:
@@ -382,3 +386,90 @@ def get_embeddings_df(batch_size=32, path="data/images", dataset_name='', backbo
         os.makedirs(f'{directory}/{dataset_name}')
         
     df.to_csv(f'{directory}/{dataset_name}/Embeddings_{backbone}.csv', index=False)
+
+
+def fine_tune_model(backbone, image_dir, labels_df, num_classes, output_dir='models',
+                    num_epochs=20, batch_size=32, lr=1e-4, unfreeze_layers=10):
+    """
+    Fine-tune a pre-trained backbone on the product images.
+
+    Args:
+        backbone (str): Backbone name (e.g. 'vit_base', 'convnextv2_tiny').
+        image_dir (str): Path to the folder containing images.
+        labels_df (pd.DataFrame): DataFrame with columns 'ImageName' and 'label'.
+        num_classes (int): Number of output classes.
+        output_dir (str): Directory to save the fine-tuned embeddings CSV.
+        num_epochs (int): Number of training epochs.
+        batch_size (int): Batch size.
+        lr (float): Learning rate.
+        unfreeze_layers (int): Number of layers to unfreeze from the top of the backbone.
+
+    Returns:
+        pd.DataFrame: DataFrame with ImageName and fine-tuned embeddings.
+    """
+    from tensorflow.keras.optimizers import Adam
+    from tensorflow.keras.losses import SparseCategoricalCrossentropy
+    from tensorflow.keras.callbacks import EarlyStopping
+    from sklearn.preprocessing import LabelEncoder
+
+    le = LabelEncoder()
+    labels_df = labels_df.copy()
+    labels_df['label_enc'] = le.fit_transform(labels_df['label'])
+
+    dataset = ImageFolderDataset(folder_path=image_dir, image_files=labels_df['ImageName'].tolist())
+
+    cv_model = FoundationalCVModel(backbone, mode='fine_tune')
+
+    for layer in cv_model.base_model.layers[:-unfreeze_layers]:
+        layer.trainable = False
+    for layer in cv_model.base_model.layers[-unfreeze_layers:]:
+        layer.trainable = True
+
+    input_layer = tf.keras.Input(shape=(224, 224, 3))
+    if backbone in ['vit_base', 'vit_large', 'convnextv2_tiny', 'convnextv2_base',
+                    'convnextv2_large', 'swin_tiny', 'swin_small', 'swin_base',
+                    'clip_base', 'clip_large']:
+        x = tf.transpose(input_layer, perm=[0, 3, 1, 2])
+        features = cv_model.base_model(x).pooler_output
+    else:
+        features = GlobalAveragePooling2D()(cv_model.base_model(input_layer))
+
+    output = tf.keras.layers.Dense(num_classes, activation='softmax')(features)
+    model = tf.keras.Model(inputs=input_layer, outputs=output)
+
+    model.compile(optimizer=Adam(lr), loss=SparseCategoricalCrossentropy(), metrics=['accuracy'])
+
+    label_map = dict(zip(labels_df['ImageName'], labels_df['label_enc']))
+
+    imgs, lbls = [], []
+    for idx in range(len(dataset)):
+        name, img = dataset[idx]
+        if name in label_map:
+            imgs.append(img)
+            lbls.append(label_map[name])
+
+    X = np.array(imgs)
+    y = np.array(lbls)
+
+    model.fit(X, y, epochs=num_epochs, batch_size=batch_size,
+              validation_split=0.1,
+              callbacks=[EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)])
+
+    embedding_model = tf.keras.Model(inputs=model.input, outputs=features)
+
+    all_names, all_feats = [], []
+    for i in range(0, len(dataset), batch_size):
+        batch = [dataset[j][1] for j in range(i, min(i + batch_size, len(dataset)))]
+        names = [dataset.image_files[j] for j in range(i, min(i + batch_size, len(dataset)))]
+        preds = embedding_model.predict(np.array(batch), verbose=0)
+        all_names.extend(names)
+        all_feats.extend(preds)
+
+    df_out = pd.DataFrame(np.array(all_feats))
+    df_out.insert(0, 'ImageName', all_names)
+
+    os.makedirs(output_dir, exist_ok=True)
+    out_path = os.path.join(output_dir, f'Embeddings_{backbone}_finetuned.csv')
+    df_out.to_csv(out_path, index=False)
+    print(f"Fine-tuned embeddings saved to {out_path}")
+    return df_out

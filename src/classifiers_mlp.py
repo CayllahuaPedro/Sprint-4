@@ -417,9 +417,10 @@ def train_mlp(train_loader, test_loader, text_input_size, image_input_size, outp
         
         if save_results:
             results = pd.DataFrame({'Predictions': y_pred, 'True Labels': np.argmax(y_true, axis=1)})
-            # create results folder if it does not exist
-            os.makedirs('results', exist_ok=True)
-            results.to_csv(f"results/{model_type}_results.csv", index=False)
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            results_dir = os.path.join(base_dir, 'results')
+            os.makedirs(results_dir, exist_ok=True)
+            results.to_csv(os.path.join(results_dir, f"{model_type}_results.csv"), index=False)
     else:
         test_accuracy, f1, macro_auc = None, None, None
         
