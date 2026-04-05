@@ -1,14 +1,7 @@
 import numpy as np
 import pandas as pd
 import os
-try:
-    from transformers import TFConvNextV2Model, TFViTModel, TFSwinModel, TFCLIPVisionModel
-except ImportError:
-    try:
-        from transformers import TFViTModel, TFSwinModel, TFCLIPVisionModel
-        TFConvNextV2Model = None
-    except ImportError:
-        TFConvNextV2Model = TFViTModel = TFSwinModel = TFCLIPVisionModel = None
+pass  # transformers models are imported lazily inside FoundationalCVModel
 from tensorflow.keras.applications import (
     ResNet50, ResNet101, DenseNet121, DenseNet169, InceptionV3
 )
@@ -115,21 +108,27 @@ class FoundationalCVModel:
             from transformers import TFConvNextV2Model as _TFConvNextV2Model
             self.base_model = _TFConvNextV2Model.from_pretrained('facebook/convnextv2-large-1k-224')
         elif backbone == 'swin_tiny':
-            self.base_model = TFSwinModel.from_pretrained('microsoft/swin-tiny-patch4-window7-224')
+            from transformers import TFSwinModel as _TFSwinModel
+            self.base_model = _TFSwinModel.from_pretrained('microsoft/swin-tiny-patch4-window7-224')
         elif backbone == 'swin_small':
-            self.base_model = TFSwinModel.from_pretrained('microsoft/swin-small-patch4-window7-224')
+            from transformers import TFSwinModel as _TFSwinModel
+            self.base_model = _TFSwinModel.from_pretrained('microsoft/swin-small-patch4-window7-224')
         elif backbone == 'swin_base':
-            self.base_model = TFSwinModel.from_pretrained('microsoft/swin-base-patch4-window7-224')
+            from transformers import TFSwinModel as _TFSwinModel
+            self.base_model = _TFSwinModel.from_pretrained('microsoft/swin-base-patch4-window7-224')
         elif backbone in ['vit_base', 'vit_large']:
+            from transformers import TFViTModel as _TFViTModel
             backbone_path = {
                 'vit_base': 'google/vit-base-patch16-224',
                 'vit_large': 'google/vit-large-patch16-224',
             }
-            self.base_model = TFViTModel.from_pretrained(backbone_path[backbone])
+            self.base_model = _TFViTModel.from_pretrained(backbone_path[backbone])
         elif backbone == 'clip_base':
-            self.base_model = TFCLIPVisionModel.from_pretrained('openai/clip-vit-base-patch32')
+            from transformers import TFCLIPVisionModel as _TFCLIPVisionModel
+            self.base_model = _TFCLIPVisionModel.from_pretrained('openai/clip-vit-base-patch32')
         elif backbone == 'clip_large':
-            self.base_model = TFCLIPVisionModel.from_pretrained('openai/clip-vit-large-patch14')
+            from transformers import TFCLIPVisionModel as _TFCLIPVisionModel
+            self.base_model = _TFCLIPVisionModel.from_pretrained('openai/clip-vit-large-patch14')
         else:
             raise ValueError(f"Unsupported backbone model: {backbone}")
 
